@@ -33,10 +33,10 @@ def main():
             req = json.loads(line)
             kana = req.get('kana', '')
             results = conv.convert_nbest(kana)
-            predict = conv.predict(kana)
+            pe, pp = conv.split_predict(kana)
         except Exception:  # noqa: BLE001
-            results, predict = [], []
-        sys.stdout.write(json.dumps({'results': results, 'predict': predict},
+            results, pe, pp = [], [], []
+        sys.stdout.write(json.dumps({'results': results, 'pe': pe, 'pp': pp},
                                     ensure_ascii=False) + '\n')
         sys.stdout.flush()
 

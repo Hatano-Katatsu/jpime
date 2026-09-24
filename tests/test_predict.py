@@ -29,8 +29,14 @@ def index(tmp_path_factory):
 class TestPredictor:
     def test_prefix(self, index):
         p = Predictor(index)
-        # 按词频（成本升序）排序：作戦200 桜300 咲く500 佐倉800 裂く900
-        assert p.query('さく') == ['作戦', '桜', '咲く', '佐倉', '裂く']
+        # 精确读音（咲く500 裂く900）在前，联想（作戦200 桜300 佐倉800）在后
+        assert p.query('さく') == ['咲く', '裂く', '作戦', '桜', '佐倉']
+
+    def test_exact_beats_cheaper_prefix(self, index):
+        # 精确匹配词频再高（成本再大）也要排在更便宜的联想前面
+        p = Predictor(index)
+        out = p.query('さく')
+        assert out.index('裂く') < out.index('作戦')
 
     def test_exact_included(self, index):
         p = Predictor(index)
@@ -47,18 +53,37 @@ class TestPredictor:
 
 
 class TestAssemble:
+    def test_short_input_exact_first(self):
+        # 短输入（<3 假名）：整句转换 + 精确读音词 + 联想
+        out = assemble_candidates('きょ', ['今'], ['今日', '京都'], ['教師'], 9)
+        assert out == ['今', '今日', '京都', '教師', 'キョ', 'きょ']
+
+    def test_long_input_completion_promoted(self):
+        # 长输入（>=3 假名）：整句转换 + 补全联想上前排，然后才是精确词
+        out = assemble_candidates('きょう', ['今'], ['今日', '京都'],
+                                  ['教師', '京大'], 9)
+        assert out[:3] == ['今', '教師', '京大']
+        assert out.index('教師') < out.index('今日')
+
     def test_order(self):
-        out = assemble_candidates('きょう', ['今日', '京'], ['教師', '京大'], 9)
+        out = assemble_candidates('きょう', ['今日', '京'], [], ['教師'], 9)
         assert out[0] == '今日'
         assert '教師' in out
         assert 'キョウ' in out and 'きょう' in out  # 保底候选仍在
 
     def test_exact_capped(self):
         exact = [f'词{i}' for i in range(10)]
-        out = assemble_candidates('あ', exact, ['联想'], 9)
+        out = assemble_candidates('あ', exact, ['精确'], ['联想'], 9)
         assert out[:5] == exact[:5]  # 精确转换最多 5 个
-        assert '联想' in out
+        assert '精确' in out
 
     def test_no_predict(self):
-        out = assemble_candidates('きょう', ['今日'], [], 9)
+        out = assemble_candidates('きょう', ['今日'], [], [], 9)
         assert out == ['今日', 'キョウ', 'きょう']
+
+    def test_qin_case(self):
+        # 秦案回归：短输入精确词不能被联想挤没
+        pe = ['新', '真', '秦']
+        pp = ['新幹線', '新宿']
+        out = assemble_candidates('し', [], pe, pp, 9)
+        assert out.index('秦') < out.index('新幹線')

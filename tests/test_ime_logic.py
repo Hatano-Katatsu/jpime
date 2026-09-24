@@ -312,3 +312,49 @@ class TestModeSwitchMessage:
     def test_no_buttons_registered(self, svc):
         # 托盘图标由独立程序提供，PIME 不再注册语言栏按钮
         assert not getattr(svc, '_buttons_added', set())
+
+
+class TestJapanesePunct:
+    def idle_type(self, svc, char):
+        msg = make_msg('filterKeyDown', char=char)
+        intercepted = svc.handleRequest(msg)['return']
+        if intercepted:
+            svc.handleRequest(make_msg('onKeyDown', char=char))
+        return intercepted
+
+    def test_idle_comma_commits_touten(self, svc):
+        assert self.idle_type(svc, ',') is True
+        assert svc.commitString == '、'
+        assert svc.compositionString == ''  # 不进入组字
+
+    def test_idle_question_commits_fullwidth(self, svc):
+        assert self.idle_type(svc, '?') is True
+        assert svc.commitString == '？'
+
+    def test_idle_various_puncts(self, svc):
+        for src, dst in [('[', '「'), (']', '」'), ('/', '・'), ('!', '！'),
+                         ('(', '（'), (')', '）'), (':', '：'), (';', '；'),
+                         ('~', '〜'), ('\\', '¥'), ('@', '＠')]:
+            svc.commitString = ''
+            assert self.idle_type(svc, src) is True, src
+            assert svc.commitString == dst, src
+
+    def test_composing_punct_commits_candidate_plus_punct(self, svc):
+        svc.converter = _StubConverter(['今日', 'きょう'])  # 不足一页，! 不作翻页键
+        type_text(svc, 'kyou')
+        type_text(svc, '!')
+        assert svc.commitString == '今日！'
+
+    def test_disabled_idle_passthrough(self, svc, tmp_path):
+        cfg = tmp_path / 'config.json'
+        cfg.write_text('{"japanese_punct": false}', encoding='utf-8')
+        from config import Config
+        svc.config = Config(path=str(cfg))
+        assert svc.config.japanese_punct is False
+        # 空闲按 , 原样透传：filterKeyDown 返回 False
+        assert self.idle_type(svc, ',') is False
+        assert svc.commitString == ''
+
+    def test_full_map_via_config_default(self, svc):
+        # 默认开启
+        assert svc.config.japanese_punct is True

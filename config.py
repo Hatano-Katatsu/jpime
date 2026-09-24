@@ -30,9 +30,10 @@ DEFAULT_KEYMAP = {
     'toggle_english': ['shift'],          # 单击切换英文模式
 }
 
-# 界面选项默认值（candPerRow: 9=横排，1=竖排）
+# 界面选项默认值（candPerRow: 9=横排，1=竖排；japanese_punct: 日文标点映射）
 DEFAULT_UI = {
     'candPerRow': 9,
+    'japanese_punct': True,
 }
 
 # 按键名 -> VK 码（keycodes.py 的 VK_* 去掉前缀小写）
@@ -85,6 +86,8 @@ class Config:
                     ui['candPerRow'] = per_row
             except (TypeError, ValueError):
                 pass
+            ui['japanese_punct'] = bool(
+                data.get('japanese_punct', DEFAULT_UI['japanese_punct']))
             self.ui = ui
             self._mtime = mtime
         except Exception:  # noqa: BLE001
@@ -104,6 +107,11 @@ class Config:
     def cand_per_row(self):
         """候选窗每排个数：9=横排，1=竖排。"""
         return self.ui.get('candPerRow', DEFAULT_UI['candPerRow'])
+
+    @property
+    def japanese_punct(self):
+        """日文标点映射开关（, -> 、 . -> 。 等）。"""
+        return self.ui.get('japanese_punct', DEFAULT_UI['japanese_punct'])
 
     def match(self, key_event, action):
         """key_event 是否命中 action 绑定的任意按键。"""

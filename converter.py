@@ -44,32 +44,54 @@ class Predictor:
                 self._by_reading = {}
                 return False
 
-    def query(self, prefix, limit=50):
-        """返回读音以 prefix 开头（但不等于 prefix）的候选词，词频高的在前。"""
+    def split_query(self, prefix, limit=50):
+        """返回 (精确读音匹配, 前缀联想)，各自按词频排序、去重。
+
+        精确匹配和联想分开返回：短输入时精确优先（转换），
+        长输入（>=3 假名）时联想补全要上前排（中文输入法式补全）。
+        """
         if not prefix or not self._load() or not self._readings:
-            return []
+            return [], []
         lo = bisect.bisect_left(self._readings, prefix)
-        hits = []
+        exact = []
+        predict = []
         readings = self._readings
         n = len(readings)
         i = lo
         while i < n and readings[i].startswith(prefix):
-            hits.extend(self._by_reading[readings[i]])
+            if readings[i] == prefix:
+                exact.extend(self._by_reading[readings[i]])
+            else:
+                predict.extend(self._by_reading[readings[i]])
             i += 1
-        hits.sort(key=lambda wc: wc[1])
-        seen = set()
-        out = []
-        for word, _ in hits:
-            if word not in seen:
-                seen.add(word)
-                out.append(word)
-                if len(out) >= limit:
-                    break
-        return out
+
+        def top(hits):
+            hits.sort(key=lambda wc: wc[1])
+            seen = set()
+            out = []
+            for word, _ in hits:
+                if word not in seen:
+                    seen.add(word)
+                    out.append(word)
+                    if len(out) >= limit:
+                        break
+            return out
+
+        return top(exact), top(predict)
+
+    def query(self, prefix, limit=50):
+        """候选词 = 精确读音匹配（词频序）+ 前缀联想（词频序）。"""
+        pe, pp = self.split_query(prefix, limit)
+        return pe + pp
 
 
-def assemble_candidates(kana, exact, predict, limit=9):
-    """拼装最终候选：精确转换在前，联想在后，末尾保底片假名/假名。"""
+def assemble_candidates(kana, exact, pe, pp, limit=9):
+    """拼装最终候选，末尾保底片假名/假名。
+
+    kana: 当前假名串；exact: MeCab 整句转换；pe: 精确读音词；pp: 前缀联想。
+    短输入（<3 假名）：转换优先，pe 在前。
+    长输入（>=3 假名）：中文输入法式补全——前 5 个联想直接进前排。
+    """
     seen = set()
     out = []
 
@@ -81,8 +103,16 @@ def assemble_candidates(kana, exact, predict, limit=9):
                 seen.add(w)
                 out.append(w)
 
-    push(exact, min(5, max(0, limit - 2)))   # 精确转换最多占 5 个位置
-    push(predict, max(0, limit - 2))          # 联想填满剩余位置
+    body = max(0, limit - 2)
+    if len(kana) >= 3:
+        push(exact, min(5, body))   # 整句转换
+        push(pp, min(10, body))     # 补全联想上前排（前 5 个左右）
+        push(pe, body)              # 单字/精确转换
+        push(pp, body)              # 剩余联想
+    else:
+        push(exact, min(5, body))
+        push(pe, body)
+        push(pp, body)
     for fallback in (hira_to_kata(kana), kana):
         if fallback not in seen:
             out.append(fallback)
@@ -131,13 +161,17 @@ class KanaKanjiConverter:
     def predict(self, kana, limit=50):
         return self._predictor.query(kana, limit)
 
+    def split_predict(self, kana, limit=50):
+        return self._predictor.split_query(kana, limit)
+
     def candidates(self, romaji_buffer, limit=9):
         """输入罗马字缓冲（如 'kyouha'），返回候选列表（最多 limit 个）。"""
         kana = kana_for_conversion(romaji_buffer)
         if not kana:
             return []
-        return assemble_candidates(kana, self.convert_nbest(kana),
-                                   self.predict(kana), limit)
+        pe, pp = self.split_predict(kana)
+        return assemble_candidates(kana, self.convert_nbest(kana), pe, pp,
+                                   limit)
 
     @property
     def available(self):
@@ -170,7 +204,7 @@ class ConverterProxy:
         return self._proc
 
     def _query(self, kana):
-        """返回 (精确转换列表, 联想列表)。"""
+        """返回 (整句转换列表, 精确读音词列表, 前缀联想列表)。"""
         with self._lock:
             try:
                 proc = self._ensure_proc()
@@ -181,7 +215,8 @@ class ConverterProxy:
                 if not line:
                     raise IOError('helper closed')
                 resp = json.loads(line)
-                return resp.get('results', []), resp.get('predict', [])
+                return (resp.get('results', []), resp.get('pe', []),
+                        resp.get('pp', []))
             except Exception:  # noqa: BLE001
                 try:
                     if self._proc:
@@ -189,7 +224,7 @@ class ConverterProxy:
                 except Exception:  # noqa: BLE001
                     pass
                 self._proc = None
-                return [], []
+                return [], [], []
 
     def convert_nbest(self, kana):
         return self._query(kana)[0]
@@ -198,8 +233,8 @@ class ConverterProxy:
         kana = kana_for_conversion(romaji_buffer)
         if not kana:
             return []
-        exact, predict = self._query(kana)
-        return assemble_candidates(kana, exact, predict, limit)
+        exact, pe, pp = self._query(kana)
+        return assemble_candidates(kana, exact, pe, pp, limit)
 
 
 def create_converter(config_path=None):

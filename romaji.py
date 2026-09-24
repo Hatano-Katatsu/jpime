@@ -115,7 +115,9 @@ def to_kana(buf):
                 continue
             if nxt == 'n':
                 out.append('ん')
-                i += 1 if nxt2 in 'aiueoy' else 2
+                # n+n+元音/y -> ん+な行音节；词尾/辅音前的 nn -> ん
+                # 注意：nxt2 为空时 '' in 'aiueoy' 也是 True，必须先判空
+                i += 1 if (nxt2 and nxt2 in 'aiueoy') else 2
                 continue
             if nxt and nxt in _CONSONANTS and nxt != 'y':
                 out.append('ん')

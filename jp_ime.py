@@ -1,13 +1,16 @@
 #! python3
 # -*- coding: utf-8 -*-
-"""中文式交互的日语输入法 — PIME 模块。
+r"""中文式交互的日语输入法 — PIME 模块。
 
 交互设计（对齐中文拼音输入法习惯）：
 - 输入罗马字立即显示假名 + 候选词窗口
 - 数字键 1-9 直接选词上屏
 - 空格上屏当前高亮候选（默认第一个）
 - Enter 上屏原始假名，Esc 清空，Backspace 回删
-- 中文标点映射：, -> 、  . -> 。  [ -> 「  ] -> 」  / -> ・
+- 日文标点映射（可在 config.json 用 japanese_punct 关闭）：
+  , -> 、  . -> 。  [ -> 「  ] -> 」  / -> ・  ? -> ？  ! -> ！
+  ( -> （  ) -> ）  : -> ：  ; -> ；  ~ -> 〜  \ -> ¥  @ -> ＠
+  组字中按标点 = 上屏首选候选 + 标点；空闲时直接上屏标点
 """
 import os.path
 import sys
@@ -36,6 +39,16 @@ _PUNCT_MAP = {
     '[': '「',
     ']': '」',
     '/': '・',
+    '?': '？',
+    '!': '！',
+    '(': '（',
+    ')': '）',
+    ':': '：',
+    ';': '；',
+    '~': '〜',    # U+301C WAVE DASH
+    '\\': '¥',   # U+00A5 YEN SIGN
+    '@': '＠',
+    # < > 不映射：翻页/原样
 }
 
 
@@ -174,8 +187,11 @@ class JpTextService(TextService):
                 return False
         if self.romaji or self.showCandidates:
             return True  # 组字中：按键全部交给我们处理
-        # 空闲时只拦小写字母（开始新的组字）
-        return ord('a') <= keyEvent.charCode <= ord('z')
+        # 空闲时拦小写字母（开始新的组字）和日文标点（直接上屏映射标点）
+        if ord('a') <= keyEvent.charCode <= ord('z'):
+            return True
+        return (self.config.japanese_punct and bool(keyEvent.charCode)
+                and chr(keyEvent.charCode) in _PUNCT_MAP)
 
     def filterKeyUp(self, keyEvent):
         return self._is_toggle_key(keyEvent)
@@ -269,10 +285,14 @@ class JpTextService(TextService):
                 return False
             return True
 
-        # 空闲状态：小写字母开始组字
+        # 空闲状态：小写字母开始组字；日文标点直接上屏
         if ord('a') <= ch <= ord('z'):
             self.romaji.input(chr(ch))
             self._refresh()
+            return True
+        c = chr(ch) if ch else ''
+        if self.config.japanese_punct and c in _PUNCT_MAP:
+            self.setCommitString(_PUNCT_MAP[c])
         return True
 
     def onCompositionTerminated(self, forced):

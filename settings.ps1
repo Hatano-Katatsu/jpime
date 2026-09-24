@@ -29,6 +29,7 @@ $defaults = @{
 $current = @{}
 foreach ($a in $actions) { $current[$a[0]] = $defaults[$a[0]] }
 $script:perRow = 9   # 候选窗每排个数：9=横排，1=竖排
+$script:jpPunct = $true   # 日文标点映射（, -> 、  . -> 。  等）
 if (Test-Path $cfgPath) {
     try {
         $j = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -37,6 +38,7 @@ if (Test-Path $cfgPath) {
             if ($v) { $current[$a[0]] = @($v) }
         }
         if ($j.candPerRow -ge 1) { $script:perRow = [int]$j.candPerRow }
+        if ($null -ne $j.japanese_punct) { $script:jpPunct = [bool]$j.japanese_punct }
     } catch {}
 }
 
@@ -277,6 +279,31 @@ $layoutRow.Children.Add($layoutLbl) | Out-Null
 $layoutRow.Children.Add($segTrack) | Out-Null
 $stack.Children.Add($layoutRow) | Out-Null
 
+# ---- 日文标点开关 ----
+$punctRow = New-Object Windows.Controls.Grid
+$punctRow.Margin = '20,10,20,4'
+$pcol1 = New-Object Windows.Controls.ColumnDefinition; $pcol1.Width = '150'
+$pcol2 = New-Object Windows.Controls.ColumnDefinition; $pcol2.Width = '*'
+$punctRow.ColumnDefinitions.Add($pcol1); $punctRow.ColumnDefinitions.Add($pcol2)
+
+$punctLbl = New-Object Windows.Controls.TextBlock
+$punctLbl.Text = '标点'
+$punctLbl.Foreground = $brText
+$punctLbl.VerticalAlignment = 'Center'
+[Windows.Controls.Grid]::SetColumn($punctLbl, 0)
+
+$punctCb = New-Object Windows.Controls.CheckBox
+$punctCb.Content = '使用日文标点（, → 、   . → 。   [ → 「  等）'
+$punctCb.Foreground = $brText
+$punctCb.VerticalAlignment = 'Center'
+$punctCb.VerticalContentAlignment = 'Center'
+$punctCb.IsChecked = $script:jpPunct
+[Windows.Controls.Grid]::SetColumn($punctCb, 1)
+
+$punctRow.Children.Add($punctLbl) | Out-Null
+$punctRow.Children.Add($punctCb) | Out-Null
+$stack.Children.Add($punctRow) | Out-Null
+
 # ---- buttons ----
 $btnRow = New-Object Windows.Controls.StackPanel
 $btnRow.Orientation = 'Horizontal'
@@ -319,7 +346,7 @@ $btnSave.Add_Click({
         if ($keys) { $keymap[$k] = @($keys | ForEach-Object { $_.ToLower() }) }
     }
     if (-not (Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
-    @{keymap = $keymap; candPerRow = $script:perRow} | ConvertTo-Json -Depth 4 | Set-Content $cfgPath -Encoding UTF8
+    @{keymap = $keymap; candPerRow = $script:perRow; japanese_punct = [bool]$punctCb.IsChecked} | ConvertTo-Json -Depth 4 | Set-Content $cfgPath -Encoding UTF8
     $btnSave.Content = '✓ 已保存'
     $btnSave.IsEnabled = $false
     $timer = New-Object Windows.Threading.DispatcherTimer
@@ -341,6 +368,7 @@ $btnReset.Add_Click({
     }
     $script:perRow = 9
     & $script:updateSeg
+    $punctCb.IsChecked = $true
 })
 
 $btnCancel = New-StyledButton '取消' $false

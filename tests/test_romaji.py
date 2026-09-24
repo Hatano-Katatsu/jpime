@@ -60,6 +60,12 @@ class TestN:
         assert to_kana("kin'i") == 'きんい'
         assert to_kana("kan'atsu") == 'かんあつ'
 
+    def test_nn_at_end(self):
+        # 词尾 nn 直接出 ん（回归：空串 in 'aiueoy' 为 True 导致的 bug）
+        assert to_kana('shinn') == 'しん'
+        assert to_kana('kann') == 'かん'
+        assert kana_for_conversion('shinn') == 'しん'
+
     def test_n_end_pending(self):
         assert to_kana('kon') == 'こn'
 
