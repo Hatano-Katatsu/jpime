@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.user_data/
+engine.json
+predict_index.pkl
+dist/
+PIME-src/build32/
+PIME-src/build64/
