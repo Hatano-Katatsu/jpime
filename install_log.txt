@@ -4,12 +4,18 @@
 复制 converter.py
 复制 converter_server.py
 复制 user_history.py
+复制 config.py
+复制 settings.ps1
 复制 icon.ico
 复制 icon_en.ico
+复制 icon_config.ico
 复制 predict_index.pkl
+复制 jpime-tray.exe
 已写 engine.json
 已替换 C:\Program Files (x86)\PIME\x86\PIMETextService.dll （原版备份为 .orig）
 已替换 C:\Program Files (x86)\PIME\x64\PIMETextService.dll （原版备份为 .orig）
 已注册 C:\Program Files (x86)\PIME\x86\PIMETextService.dll
 已注册 C:\Program Files (x86)\PIME\x64\PIMETextService.dll
+已在「日语」语言下启用
+托盘程序已启动并注册自启
 完成。

@@ -1,9 +1,9 @@
 {
 	"name": "日文输入法（中文式选词）",
-	"version": "0.1",
+	"version": "0.2",
 	"guid": "{DA3AF487-B408-4C4F-B9BE-CD1D1243F703}",
-	"locale": "zh-CN",
-	"fallbackLocale": "zh-CN",
+	"locale": "ja-JP",
+	"fallbackLocale": "ja-JP",
 	"icon": "icon.ico",
 	"win8_icon": "",
 	"moduleName": "jp_ime",

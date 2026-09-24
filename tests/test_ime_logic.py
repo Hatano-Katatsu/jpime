@@ -44,9 +44,11 @@ def make_msg(method, char=None, vk=None, caps=False):
 
 @pytest.fixture()
 def svc(tmp_path):
+    from config import Config
     from user_history import UserHistory
     s = JpTextService(client=None)
     s.history = UserHistory(path=str(tmp_path / 'history.json'))  # 隔离的用户历史
+    s.config = Config(path=str(tmp_path / 'config.json'))         # 隔离的配置
     s.onActivate()
     return s
 
@@ -273,3 +275,40 @@ class TestEnglishMode:
         assert svc.english_mode
         assert svc.commitString == 'きょう'
         assert svc.compositionString == ''
+
+
+class TestCustomKeymap:
+    def test_custom_full_kata_key(self, svc, tmp_path):
+        # 把全角片假名从 Tab 改绑到 F8
+        cfg = tmp_path / 'config.json'
+        cfg.write_text('{"keymap": {"commit_full_katakana": ["f8"]}}',
+                       encoding='utf-8')
+        from config import Config
+        svc.config = Config(path=str(cfg))
+        type_text(svc, 'kawa')
+        press(svc, 0x77)  # VK_F8
+        assert svc.commitString == 'カワ'
+
+    def test_default_still_works(self, svc):
+        type_text(svc, 'kawa')
+        press(svc, VK_TAB)
+        assert svc.commitString == 'カワ'
+
+
+class TestModeSwitchMessage:
+    def shift_tap(self, svc):
+        press(svc, VK_SHIFT)  # keydown
+        svc.handleRequest(make_msg('filterKeyUp', vk=VK_SHIFT))
+        return svc.handleRequest(make_msg('onKeyUp', vk=VK_SHIFT))
+
+    def test_shows_message_on_toggle(self, svc):
+        reply = self.shift_tap(svc)
+        assert svc.english_mode
+        assert reply['showMessage'] == {'message': '英文模式', 'duration': 2}
+        reply = self.shift_tap(svc)
+        assert not svc.english_mode
+        assert reply['showMessage'] == {'message': '日文模式', 'duration': 2}
+
+    def test_no_buttons_registered(self, svc):
+        # 托盘图标由独立程序提供，PIME 不再注册语言栏按钮
+        assert not getattr(svc, '_buttons_added', set())

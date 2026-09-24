@@ -3,8 +3,13 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .user_data/
+.pime_test/
 engine.json
 predict_index.pkl
 dist/
-PIME-src/build32/
-PIME-src/build64/
+_deps/
+_pime_upstream/
+PIME-src/build*/
+install_log.txt
+swap_pime_launcher.log
+show_langbar.ps1

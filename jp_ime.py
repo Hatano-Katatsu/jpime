@@ -24,6 +24,7 @@ if _HERE not in sys.path:
 from romaji import RomajiConverter, hira_to_half_kata, hira_to_kata, kana_for_conversion  # noqa: E402
 from converter import create_converter  # noqa: E402
 from user_history import UserHistory  # noqa: E402
+from config import Config  # noqa: E402
 
 _SEL_KEYS = "123456789"
 _PAGE_SIZE = 9          # 每页候选数
@@ -45,41 +46,26 @@ class JpTextService(TextService):
         self.romaji = RomajiConverter()
         self.converter = create_converter()
         self.history = UserHistory()
+        self.config = Config()
         self.english_mode = False   # Shift 单击切换 日文/纯英文
         self._shift_alone = False   # Shift 按下后是否还没碰过其它键
         self._all_cands = []        # 全部候选（分页前）
         self._page = 0
+        self._applied_per_row = None  # 已应用到候选窗的每排个数
 
     def onActivate(self):
         TextService.onActivate(self)
-        # 对齐微软拼音横排：一排 9 个候选、12pt、Yu Gothic UI
+        # 对齐微软拼音：12pt、Yu Gothic UI；每排个数可配置（9=横排，1=竖排）
+        self._applied_per_row = self.config.cand_per_row
         self.customizeUI(candFontName='Yu Gothic UI',
                          candFontSize=12,
-                         candPerRow=9,
+                         candPerRow=self._applied_per_row,
                          candUseCursor=True)
         self.setSelKeys(_SEL_KEYS)
-        self._buttons_added = set()
-
-    def _apply_mode_icon(self):
-        # 只在英文模式下显示 A 图标，避免和 Windows 自带的输入法图标重复
-        if self.english_mode and 'windows-mode-icon' not in self._buttons_added:
-            self.addButton('windows-mode-icon',
-                           icon=os.path.join(self.icon_dir, 'icon_en.ico'),
-                           tooltip='英文模式（单击 Shift 切回日文）')
-            self._buttons_added.add('windows-mode-icon')
-        elif not self.english_mode and 'windows-mode-icon' in self._buttons_added:
-            self.removeButton('windows-mode-icon')
-            self._buttons_added.discard('windows-mode-icon')
 
     def _set_english_mode(self, english):
         self.english_mode = english
-        self._apply_mode_icon()
-
-    def onDeactivate(self):
-        if 'windows-mode-icon' in getattr(self, '_buttons_added', ()):
-            self.removeButton('windows-mode-icon')
-            self._buttons_added.discard('windows-mode-icon')
-        TextService.onDeactivate(self)
+        self.showMessage('英文模式' if english else '日文模式', 2)
 
     # ---- 内部工具 ----
 
@@ -158,9 +144,20 @@ class JpTextService(TextService):
 
     # ---- 按键处理 ----
 
+    def checkConfigChange(self):
+        # 每次消息都检查配置文件 mtime，热重载快捷键和候选窗排列
+        self.config.reload_if_changed()
+        per_row = self.config.cand_per_row
+        if per_row != self._applied_per_row:
+            self._applied_per_row = per_row
+            self.customizeUI(candPerRow=per_row, candUseCursor=True)
+
+    def _is_toggle_key(self, keyEvent):
+        return self.config.match(keyEvent, 'toggle_english')
+
     def filterKeyDown(self, keyEvent):
-        # Shift 键本身要拦（单击切换 日文/英文 模式）
-        if keyEvent.keyCode == VK_SHIFT:
+        # 模式切换键本身要拦（单击切换 日文/英文 模式）
+        if self._is_toggle_key(keyEvent):
             self._shift_alone = True
             return True
         self._shift_alone = False
@@ -181,11 +178,11 @@ class JpTextService(TextService):
         return ord('a') <= keyEvent.charCode <= ord('z')
 
     def filterKeyUp(self, keyEvent):
-        return keyEvent.keyCode == VK_SHIFT
+        return self._is_toggle_key(keyEvent)
 
     def onKeyUp(self, keyEvent):
-        # Shift 单独点击（中间没碰其它键）-> 切换 日文/英文 模式
-        if keyEvent.keyCode == VK_SHIFT and self._shift_alone:
+        # 切换键单独点击（中间没碰其它键）-> 切换 日文/英文 模式
+        if self._is_toggle_key(keyEvent) and self._shift_alone:
             self._shift_alone = False
             if self.romaji:
                 self._commit(self._display_kana())
@@ -196,19 +193,20 @@ class JpTextService(TextService):
     def onKeyDown(self, keyEvent):
         ch = keyEvent.charCode
         code = keyEvent.keyCode
+        cfg = self.config
 
-        if code == VK_SHIFT:
+        if cfg.match(keyEvent, 'toggle_english'):
             return True  # 已在 filterKeyDown 里标记，抬起时才切换
 
         if self.english_mode:
             return False
 
         if self.romaji:
-            # Tab：全角片假名上屏；`~ 键（Tab 左边）：半角片假名上屏
-            if code == VK_TAB:
+            # 片假名转换（键位可在 config.json 自定义）
+            if cfg.match(keyEvent, 'commit_full_katakana'):
                 self._commit(hira_to_kata(self._display_kana()))
                 return True
-            if code == VK_OEM_3:
+            if cfg.match(keyEvent, 'commit_half_katakana'):
                 self._commit(hira_to_half_kata(self._display_kana()))
                 return True
             # 数字键选词（选当前页的第 N 个）
@@ -219,12 +217,12 @@ class JpTextService(TextService):
             if code == VK_SPACE:
                 self._commit_candidate(self._current_global_index())
                 return True
-            # Enter：上屏原始假名
-            if code == VK_RETURN:
+            # 上屏原始假名
+            if cfg.match(keyEvent, 'commit_kana'):
                 self._commit(self._display_kana())
                 return True
-            # Esc：全部取消
-            if code == VK_ESCAPE:
+            # 全部取消
+            if cfg.match(keyEvent, 'cancel'):
                 self._clear()
                 return True
             # Backspace：回删一个罗马字字母
@@ -233,18 +231,25 @@ class JpTextService(TextService):
                 self._refresh()
                 return True
             # 候选窗内光标移动
-            if self.showCandidates and code in (VK_UP, VK_DOWN):
-                delta = -1 if code == VK_UP else 1
-                pos = (self.candidateCursor + delta) % len(self.candidateList)
+            if self.showCandidates and cfg.match(keyEvent, 'cursor_up'):
+                pos = (self.candidateCursor - 1) % len(self.candidateList)
                 self.setCandidateCursor(pos)
                 return True
-            # , . / <> / PageUp / PageDown 翻页（有多页时优先翻页，否则逗号句号当标点）
+            if self.showCandidates and cfg.match(keyEvent, 'cursor_down'):
+                pos = (self.candidateCursor + 1) % len(self.candidateList)
+                self.setCandidateCursor(pos)
+                return True
+            # 翻页（有多页时优先翻页，否则逗号句号当标点）
             c = chr(ch) if ch else ''
             if self.showCandidates and self._all_cands:
                 pages = (len(self._all_cands) + _PAGE_SIZE - 1) // _PAGE_SIZE
-                if pages > 1 and (c in ',.<>' or code in (VK_PRIOR, VK_NEXT)):
-                    self._turn_page(1 if c in '.>' or code == VK_NEXT else -1)
-                    return True
+                if pages > 1:
+                    if cfg.match(keyEvent, 'page_up'):
+                        self._turn_page(-1)
+                        return True
+                    if cfg.match(keyEvent, 'page_down'):
+                        self._turn_page(1)
+                        return True
             # 标点：上屏首选候选并附日文标点（也记入学习）
             if c in _PUNCT_MAP:
                 cand = (self.candidateList[self.candidateCursor]

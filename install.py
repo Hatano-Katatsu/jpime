@@ -18,8 +18,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 VENV_PYTHON = os.path.join(HERE, '.venv', 'Scripts', 'python.exe')
 
 MODULE_FILES = ['ime.json', 'jp_ime.py', 'romaji.py', 'converter.py',
-                'converter_server.py', 'user_history.py', 'icon.ico', 'icon_en.ico',
-                'predict_index.pkl']
+                'converter_server.py', 'user_history.py', 'config.py',
+                'settings.ps1', 'icon.ico', 'icon_en.ico', 'icon_config.ico',
+                'predict_index.pkl', 'jpime-tray.exe']
 
 
 def is_admin():
@@ -41,6 +42,10 @@ def main():
         shutil.copy2(backends_path + '.bak', backends_path)
         os.remove(backends_path + '.bak')
         print('已恢复 backends.json')
+
+    # 0. 停掉托盘程序（运行中的 exe 无法覆盖）
+    subprocess.run(['taskkill', '/F', '/IM', 'jpime-tray.exe'],
+                   capture_output=True)
 
     # 1. 复制模块文件
     os.makedirs(MODULE_DIR, exist_ok=True)
@@ -95,8 +100,38 @@ def main():
         if os.path.isfile(dll):
             subprocess.run(['regsvr32', '/s', dll], check=True)
             print('已注册', dll)
+
+    # 6. 启用日语 profile（注册在 ja-JP 下），并清理旧的 zh-CN 挂载
+    import winreg
+    prof = 'DA3AF487-B408-4C4F-B9BE-CD1D1243F703'
+    clsid = '35F67E9D-A54D-4177-9697-8B0AB71A9E04'
+    up = r'Control Panel\International\User Profile'
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, up + r'\ja') as k:
+        winreg.SetValueEx(k, '0411:{%s}{%s}' % (clsid, prof), 0,
+                          winreg.REG_DWORD, 1)
+    for lang in ('zh-CN', 'zh-Hans-CN'):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                up + '\\' + lang, 0,
+                                winreg.KEY_ALL_ACCESS) as k:
+                winreg.DeleteValue(k, '0804:{%s}{%s}' % (clsid, prof))
+        except OSError:
+            pass
+    print('已在「日语」语言下启用')
+
     subprocess.Popen([os.path.join(PIME_DIR, 'PIMELauncher.exe')],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # 7. 托盘伴侣：注册开机自启并立即启动（唯一托盘图标）
+    tray = os.path.join(MODULE_DIR, 'jpime-tray.exe')
+    if os.path.isfile(tray):
+        with winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER,
+                r'Software\Microsoft\Windows\CurrentVersion\Run') as k:
+            winreg.SetValueEx(k, 'jpime-tray', 0, winreg.REG_SZ, tray)
+        subprocess.Popen([tray], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+        print('托盘程序已启动并注册自启')
     print('完成。')
 
 
