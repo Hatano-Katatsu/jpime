@@ -23,8 +23,8 @@ DEFAULT_KEYMAP = {
     'cancel': ['escape'],                 # 取消
     'commit_full_katakana': ['tab'],      # 全角片假名
     'commit_half_katakana': ['oem3'],     # 半角片假名（`~ 键）
-    'page_up': [',', '<', 'prior'],      # 候选上一页
-    'page_down': ['.', '>', 'next'],     # 候选下一页
+    'page_up': [',', '<', 'prior', 'left'],   # 候选上一页
+    'page_down': ['.', '>', 'next', 'right'],  # 候选下一页
     'cursor_up': ['up'],                  # 候选光标
     'cursor_down': ['down'],
     'toggle_english': ['shift'],          # 单击切换英文模式
@@ -53,6 +53,22 @@ else:
     _CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _normalize_keys(keys):
+    """把用户写的按键列表规范化：未知的多字符 token 按单字符拆开。
+
+    比如用户写 "-="（微软拼音式写法）会被拆成 '-' 和 '=' 两个键，
+    而不是当成一个永远不匹配的键名。
+    """
+    out = []
+    for k in keys:
+        k = str(k).lower()
+        if len(k) > 1 and k not in _SPECIAL_KEYS:
+            out.extend(list(k))
+        else:
+            out.append(k)
+    return out
+
+
 class Config:
     def __init__(self, path=None):
         self._path = path or os.path.join(_CONFIG_DIR, 'config.json')
@@ -77,7 +93,7 @@ class Config:
             keymap = dict(DEFAULT_KEYMAP)
             for action, keys in custom.items():
                 if action in keymap and isinstance(keys, list) and keys:
-                    keymap[action] = [str(k).lower() for k in keys]
+                    keymap[action] = _normalize_keys(keys)
             self.keymap = keymap
             ui = dict(DEFAULT_UI)
             try:

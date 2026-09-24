@@ -358,3 +358,70 @@ class TestJapanesePunct:
     def test_full_map_via_config_default(self, svc):
         # 默认开启
         assert svc.config.japanese_punct is True
+
+
+class TestEnterAfterCursorMove:
+    def test_enter_commits_selected_after_move(self, svc):
+        type_text(svc, 'kyou')
+        press(svc, VK_DOWN)
+        selected = svc.candidateList[1]
+        press(svc, VK_RETURN)
+        assert svc.commitString == selected
+
+    def test_enter_kana_when_cursor_untouched(self, svc):
+        type_text(svc, 'kyou')
+        press(svc, VK_RETURN)
+        assert svc.commitString == 'きょう'
+
+
+class TestSelectionKeyPurity:
+    def test_out_of_range_digit_is_swallowed(self, svc):
+        svc.converter = _StubConverter(['今日', 'きょう', '強'])
+        type_text(svc, 'kyou')
+        type_text(svc, '9')  # 只有 3 个候选，按 9 不应有任何效果
+        assert svc.commitString == ''
+        assert svc.compositionString == 'きょう'
+        assert svc.showCandidates  # 候选窗还在
+
+    def test_valid_digit_still_selects(self, svc):
+        svc.converter = _StubConverter(['今日', 'きょう', '強'])
+        type_text(svc, 'kyou')
+        type_text(svc, '3')
+        assert svc.commitString == '強'
+
+
+class TestDashEqualPaging:
+    def test_combined_token_is_split(self, svc, tmp_path):
+        # 用户写 "-="（粘连写法）也应识别为两个键
+        cfg_file = tmp_path / 'config.json'
+        cfg_file.write_text('{"keymap": {"page_down": ["-="]}}', encoding='utf-8')
+        from config import Config
+        svc.config = Config(path=str(cfg_file))
+        svc.converter = _StubConverter([f'词{i}' for i in range(1, 29)])
+        type_text(svc, 'a')
+        type_text(svc, '=')
+        assert svc.candidateList[0] == '词10'  # = 翻到第 2 页
+        type_text(svc, '-')
+        assert svc.candidateList[0] == '词19'  # - 也命中 page_down，翻到第 3 页
+
+    def test_dash_swallowed_when_single_page(self, svc, tmp_path):
+        # 单页候选时按 - 不做事，更不能变成促音长音 ー
+        cfg_file = tmp_path / 'config.json'
+        cfg_file.write_text('{"keymap": {"page_up": ["-"]}}', encoding='utf-8')
+        from config import Config
+        svc.config = Config(path=str(cfg_file))
+        svc.converter = _StubConverter(['今日', 'きょう'])
+        type_text(svc, 'kyou')
+        type_text(svc, '-')
+        assert svc.compositionString == 'きょう'  # 缓冲没变
+        assert svc.commitString == ''
+
+
+class TestArrowPaging:
+    def test_left_right_paging(self, svc):
+        svc.converter = _StubConverter([f'词{i}' for i in range(1, 26)])
+        type_text(svc, 'a')
+        press(svc, 0x27)  # VK_RIGHT 下一页
+        assert svc.candidateList[0] == '词10'
+        press(svc, 0x25)  # VK_LEFT 上一页
+        assert svc.candidateList[0] == '词1'

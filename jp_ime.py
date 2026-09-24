@@ -225,17 +225,22 @@ class JpTextService(TextService):
             if cfg.match(keyEvent, 'commit_half_katakana'):
                 self._commit(hira_to_half_kata(self._display_kana()))
                 return True
-            # 数字键选词（选当前页的第 N 个）
+            # 数字键选词（选当前页的第 N 个；超出范围直接吞掉，不做任何其它事）
             if ord('1') <= ch <= ord('9') and self.showCandidates:
-                self._commit_candidate(self._page * _PAGE_SIZE + ch - ord('1'))
+                idx = self._page * _PAGE_SIZE + ch - ord('1')
+                if idx < len(self._all_cands):
+                    self._commit_candidate(idx)
                 return True
             # 空格：上屏高亮候选（无候选则上屏假名）
             if code == VK_SPACE:
                 self._commit_candidate(self._current_global_index())
                 return True
-            # 上屏原始假名
+            # 上屏原始假名（方向键动过光标时，Enter 确认选中的候选）
             if cfg.match(keyEvent, 'commit_kana'):
-                self._commit(self._display_kana())
+                if self.showCandidates and self.candidateCursor > 0:
+                    self._commit_candidate(self._current_global_index())
+                else:
+                    self._commit(self._display_kana())
                 return True
             # 全部取消
             if cfg.match(keyEvent, 'cancel'):
@@ -255,16 +260,22 @@ class JpTextService(TextService):
                 pos = (self.candidateCursor + 1) % len(self.candidateList)
                 self.setCandidateCursor(pos)
                 return True
-            # 翻页（有多页时优先翻页，否则逗号句号当标点）
+            # 翻页：多页时翻页；单页时标点键（, .）仍可当标点，
+            # 其它翻页绑定键（如 - =）直接吞掉，绝不落入罗马字转换
             c = chr(ch) if ch else ''
             if self.showCandidates and self._all_cands:
                 pages = (len(self._all_cands) + _PAGE_SIZE - 1) // _PAGE_SIZE
-                if pages > 1:
-                    if cfg.match(keyEvent, 'page_up'):
+                if cfg.match(keyEvent, 'page_up'):
+                    if pages > 1:
                         self._turn_page(-1)
                         return True
-                    if cfg.match(keyEvent, 'page_down'):
+                    if c not in _PUNCT_MAP:
+                        return True
+                if cfg.match(keyEvent, 'page_down'):
+                    if pages > 1:
                         self._turn_page(1)
+                        return True
+                    if c not in _PUNCT_MAP:
                         return True
             # 标点：上屏首选候选并附日文标点（也记入学习）
             if c in _PUNCT_MAP:
