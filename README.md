@@ -18,7 +18,11 @@
 
 ## 给新机器安装（最终用户）
 
-双击 `dist/jpime-setup.exe`，批准一次管理员权限即可。安装包自带：PIME 框架、定制候选窗、转换引擎便携运行时、联想词典，无需联网和任何依赖。装完在 中文(简体) 的键盘列表里启用「日文输入法（中文式选词）」。
+1. 下载仓库 zip（Code → Download ZIP）解压，或 `git clone` 本仓库
+2. 右键 `install.ps1` →「使用 PowerShell 运行」
+3. 批准一次管理员权限（UAC），等待完成弹窗
+
+脚本会联网下载大件：PIME 框架本体（GitHub release，失败自动走镜像）、便携 Python 3.12 运行时、MeCab / mozcpy 词典（PyPI）、mozc 词典文本（gitee 镜像，现场构建联想索引）；定制 DLL / PIMELauncher / 托盘程序等小二进制已随仓库自带（`bin/`）。脚本可重复运行，已装好的组件会自动跳过。装完在 日语 的键盘列表里启用「日文输入法（中文式选词）」。卸载走系统「应用和功能」。
 
 ## 架构
 
@@ -47,7 +51,7 @@ python -m venv .venv
 .venv\Scripts\python install.py               :: 部署到本机 PIME（自动提权）
 ```
 
-重新打包安装包：同步 `dist/payload/module/` 里的模块文件后，在 `dist/` 下重新生成 bundle.zip 并执行 `iexpress /N /Q jpime.sed`。
+定制二进制（`bin/`）如需更新：重编译 `PIME-src/` 后把 Release 产物复制过去并提交。
 
 ## 已知限制
 
