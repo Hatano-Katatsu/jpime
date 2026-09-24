@@ -29,6 +29,35 @@ from converter import create_converter  # noqa: E402
 from user_history import UserHistory  # noqa: E402
 from config import Config  # noqa: E402
 
+import threading as _threading  # noqa: E402
+
+# 转换引擎全局单例：PIME 每个应用创建一个 TextService 实例，
+# 若每实例各起一个 helper 进程，则每个应用的首字都要冷启动（约 800ms
+# 词典+索引加载）。单例后整个后端只有一个 helper，只冷启动一次。
+_CONVERTER = None
+_CONVERTER_LOCK = _threading.Lock()
+
+
+def _get_converter():
+    global _CONVERTER
+    if _CONVERTER is None:
+        with _CONVERTER_LOCK:
+            if _CONVERTER is None:
+                _CONVERTER = create_converter()
+    return _CONVERTER
+
+
+def _prewarm_converter():
+    try:
+        _get_converter().candidates('ああ')
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# 模块加载即在后台预热（拉起 helper、预载词典与联想索引），
+# 用户打到第一个字时引擎已经热了。
+_threading.Thread(target=_prewarm_converter, daemon=True).start()
+
 _SEL_KEYS = "123456789"
 _PAGE_SIZE = 9          # 每页候选数
 _MAX_PAGES = 5          # 最多 5 页（<> 翻页）
@@ -57,7 +86,7 @@ class JpTextService(TextService):
         TextService.__init__(self, client)
         self.icon_dir = os.path.abspath(os.path.dirname(__file__))
         self.romaji = RomajiConverter()
-        self.converter = create_converter()
+        self.converter = _get_converter()
         self.history = UserHistory()
         self.config = Config()
         self.english_mode = False   # Shift 单击切换 日文/纯英文

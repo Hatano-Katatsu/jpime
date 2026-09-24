@@ -425,3 +425,12 @@ class TestArrowPaging:
         assert svc.candidateList[0] == '词10'
         press(svc, 0x25)  # VK_LEFT 上一页
         assert svc.candidateList[0] == '词1'
+
+
+class TestConverterSingleton:
+    def test_instances_share_converter(self, svc):
+        # 单例：多个输入法实例共享同一个转换引擎（同一 helper 进程）
+        import jp_ime
+        s2 = JpTextService(client=None)
+        assert svc.converter is s2.converter
+        assert svc.converter is jp_ime._get_converter()
