@@ -23,12 +23,14 @@ def setup_sandbox():
     # 复制 PIME 的 python 后端（含自带解释器）
     shutil.copytree(PIME_PY, os.path.join(SANDBOX, 'python'),
                     ignore=shutil.ignore_patterns('__pycache__'))
-    # 放入最新模块
+    # 放入最新模块（与 install.py 共用一份文件清单）
     mod_dir = os.path.join(SANDBOX, 'python', 'input_methods', 'jpime')
     os.makedirs(mod_dir, exist_ok=True)
-    for f in ('ime.json', 'jp_ime.py', 'romaji.py', 'converter.py',
-              'converter_server.py', 'user_history.py', 'icon.ico', 'icon_en.ico'):
-        shutil.copy2(os.path.join(HERE, f), os.path.join(mod_dir, f))
+    from install import MODULE_FILES
+    for f in MODULE_FILES:
+        src = os.path.join(HERE, f)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(mod_dir, f))
     with open(os.path.join(mod_dir, 'engine.json'), 'w', encoding='utf-8') as fp:
         json.dump({'python': os.path.join(HERE, '.venv', 'Scripts', 'python.exe'),
                    'server': os.path.join(mod_dir, 'converter_server.py')}, fp)

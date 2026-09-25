@@ -434,3 +434,80 @@ class TestConverterSingleton:
         s2 = JpTextService(client=None)
         assert svc.converter is s2.converter
         assert svc.converter is jp_ime._get_converter()
+
+
+class TestVerticalMode:
+    @pytest.fixture()
+    def vsvc(self, svc, tmp_path):
+        # 切到竖排（candPerRow=1）
+        cfg_file = tmp_path / 'vcfg.json'
+        cfg_file.write_text('{"candPerRow": 1}', encoding='utf-8')
+        from config import Config
+        svc.config = Config(path=str(cfg_file))
+        svc.converter = _StubConverter([f'词{i}' for i in range(1, 26)])
+        svc._applied_per_row = 1
+        return svc
+
+    def test_enter_commits_highlighted(self, vsvc):
+        # 竖排：Enter 直接确认选中（即使光标没动过）
+        type_text(vsvc, 'a')
+        press(vsvc, VK_RETURN)
+        assert vsvc.commitString == '词1'
+
+    def test_enter_after_cursor_move(self, vsvc):
+        type_text(vsvc, 'a')
+        press(vsvc, VK_DOWN)
+        press(vsvc, VK_RETURN)
+        assert vsvc.commitString == '词2'
+
+    def test_left_right_page(self, vsvc):
+        type_text(vsvc, 'a')
+        press(vsvc, 0x27)  # VK_RIGHT
+        assert vsvc.candidateList[0] == '词10'
+
+    def test_comma_is_always_punct(self, vsvc):
+        # 竖排：多页候选时 , 也输入标点，不翻页
+        type_text(vsvc, 'a')
+        type_text(vsvc, ',')
+        assert vsvc.commitString.endswith('、')
+
+    def test_horizontal_unchanged(self, svc):
+        # 横排回归：Enter 不动光标时仍上屏假名
+        svc.converter = _StubConverter(['今日', 'きょう'])
+        type_text(svc, 'kyou')
+        press(svc, VK_RETURN)
+        assert svc.commitString == 'きょう'
+
+
+class TestSwappedConfirmKeys:
+    @pytest.fixture()
+    def swapped(self, svc, tmp_path):
+        # 用户场景：上屏原始假名=space，确认选中候选=return
+        cfg_file = tmp_path / 'cfg.json'
+        cfg_file.write_text(
+            '{"keymap": {"commit_kana": ["space"], "confirm_selection": ["return"]}}',
+            encoding='utf-8')
+        from config import Config
+        svc.config = Config(path=str(cfg_file))
+        svc.converter = _StubConverter(['今日', 'きょう', '強'])
+        return svc
+
+    def test_space_commits_kana(self, swapped):
+        type_text(swapped, 'kyou')
+        press(swapped, VK_SPACE)
+        assert swapped.commitString == 'きょう'
+
+    def test_enter_commits_candidate(self, swapped):
+        type_text(swapped, 'kyou')
+        press(swapped, VK_RETURN)
+        assert swapped.commitString == '今日'
+
+    def test_default_unchanged(self, svc):
+        # 默认键位回归：space 上屏候选、Enter 上屏假名
+        svc.converter = _StubConverter(['今日', 'きょう'])
+        type_text(svc, 'kyou')
+        press(svc, VK_SPACE)
+        assert svc.commitString == '今日'
+        type_text(svc, 'kyou')
+        press(svc, VK_RETURN)
+        assert svc.commitString == 'きょう'

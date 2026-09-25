@@ -195,7 +195,17 @@ class JpTextService(TextService):
             self.customizeUI(candPerRow=per_row, candUseCursor=True)
 
     def _is_toggle_key(self, keyEvent):
-        return self.config.match(keyEvent, 'toggle_english')
+        return self._match(keyEvent, 'toggle_english')
+
+    @property
+    def _vertical(self):
+        """当前是否为竖排模式（candPerRow=1）。"""
+        pr = self._applied_per_row or self.config.cand_per_row
+        return pr == 1
+
+    def _match(self, keyEvent, action):
+        """按当前排列模式（横/竖）匹配快捷键。"""
+        return self.config.match(keyEvent, action, vertical=self._vertical)
 
     def filterKeyDown(self, keyEvent):
         # 模式切换键本身要拦（单击切换 日文/英文 模式）
@@ -238,9 +248,8 @@ class JpTextService(TextService):
     def onKeyDown(self, keyEvent):
         ch = keyEvent.charCode
         code = keyEvent.keyCode
-        cfg = self.config
 
-        if cfg.match(keyEvent, 'toggle_english'):
+        if self._match(keyEvent, 'toggle_english'):
             return True  # 已在 filterKeyDown 里标记，抬起时才切换
 
         if self.english_mode:
@@ -248,10 +257,10 @@ class JpTextService(TextService):
 
         if self.romaji:
             # 片假名转换（键位可在 config.json 自定义）
-            if cfg.match(keyEvent, 'commit_full_katakana'):
+            if self._match(keyEvent, 'commit_full_katakana'):
                 self._commit(hira_to_kata(self._display_kana()))
                 return True
-            if cfg.match(keyEvent, 'commit_half_katakana'):
+            if self._match(keyEvent, 'commit_half_katakana'):
                 self._commit(hira_to_half_kata(self._display_kana()))
                 return True
             # 数字键选词（选当前页的第 N 个；超出范围直接吞掉，不做任何其它事）
@@ -260,19 +269,22 @@ class JpTextService(TextService):
                 if idx < len(self._all_cands):
                     self._commit_candidate(idx)
                 return True
-            # 空格：上屏高亮候选（无候选则上屏假名）
-            if code == VK_SPACE:
+            # 确认类按键按此顺序判定，用户改绑优先生效：
+            # 确认选中候选（竖排 Enter）→ 上屏原始假名（横排 Enter）→ 上屏高亮候选（空格）
+            if self._match(keyEvent, 'confirm_selection'):
                 self._commit_candidate(self._current_global_index())
                 return True
-            # 上屏原始假名（方向键动过光标时，Enter 确认选中的候选）
-            if cfg.match(keyEvent, 'commit_kana'):
+            if self._match(keyEvent, 'commit_kana'):
                 if self.showCandidates and self.candidateCursor > 0:
                     self._commit_candidate(self._current_global_index())
                 else:
                     self._commit(self._display_kana())
                 return True
+            if self._match(keyEvent, 'commit_candidate'):
+                self._commit_candidate(self._current_global_index())
+                return True
             # 全部取消
-            if cfg.match(keyEvent, 'cancel'):
+            if self._match(keyEvent, 'cancel'):
                 self._clear()
                 return True
             # Backspace：回删一个罗马字字母
@@ -281,11 +293,11 @@ class JpTextService(TextService):
                 self._refresh()
                 return True
             # 候选窗内光标移动
-            if self.showCandidates and cfg.match(keyEvent, 'cursor_up'):
+            if self.showCandidates and self._match(keyEvent, 'cursor_up'):
                 pos = (self.candidateCursor - 1) % len(self.candidateList)
                 self.setCandidateCursor(pos)
                 return True
-            if self.showCandidates and cfg.match(keyEvent, 'cursor_down'):
+            if self.showCandidates and self._match(keyEvent, 'cursor_down'):
                 pos = (self.candidateCursor + 1) % len(self.candidateList)
                 self.setCandidateCursor(pos)
                 return True
@@ -294,13 +306,13 @@ class JpTextService(TextService):
             c = chr(ch) if ch else ''
             if self.showCandidates and self._all_cands:
                 pages = (len(self._all_cands) + _PAGE_SIZE - 1) // _PAGE_SIZE
-                if cfg.match(keyEvent, 'page_up'):
+                if self._match(keyEvent, 'page_up'):
                     if pages > 1:
                         self._turn_page(-1)
                         return True
                     if c not in _PUNCT_MAP:
                         return True
-                if cfg.match(keyEvent, 'page_down'):
+                if self._match(keyEvent, 'page_down'):
                     if pages > 1:
                         self._turn_page(1)
                         return True

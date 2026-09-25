@@ -17,7 +17,7 @@
 import json
 import os
 
-# 动作 -> 默认按键
+# 动作 -> 默认按键（横排，中文式）
 DEFAULT_KEYMAP = {
     'commit_kana': ['return'],            # 上屏原始假名
     'cancel': ['escape'],                 # 取消
@@ -28,6 +28,24 @@ DEFAULT_KEYMAP = {
     'cursor_up': ['up'],                  # 候选光标
     'cursor_down': ['down'],
     'toggle_english': ['shift'],          # 单击切换英文模式
+    'confirm_selection': [],              # 确认选中（横排不用，空格已承担）
+    'commit_candidate': ['space'],        # 上屏高亮候选
+}
+
+# 竖排（candPerRow=1）：贴近传统日文输入法
+# Enter 直接确认选中候选；, . 只当标点（、。）；←→ 翻页；↑↓ 同页移动
+DEFAULT_KEYMAP_VERTICAL = {
+    'commit_kana': [],                    # Enter 不上屏假名（用确认选中代替）
+    'cancel': ['escape'],
+    'commit_full_katakana': ['tab'],
+    'commit_half_katakana': ['oem3'],
+    'page_up': ['left', 'prior'],
+    'page_down': ['right', 'next'],
+    'cursor_up': ['up'],
+    'cursor_down': ['down'],
+    'toggle_english': ['shift'],
+    'confirm_selection': ['return'],      # Enter 确认选中候选
+    'commit_candidate': ['space'],        # 空格上屏高亮候选
 }
 
 # 界面选项默认值（candPerRow: 9=横排，1=竖排；japanese_punct: 日文标点映射）
@@ -74,6 +92,7 @@ class Config:
         self._path = path or os.path.join(_CONFIG_DIR, 'config.json')
         self._mtime = None
         self.keymap = dict(DEFAULT_KEYMAP)
+        self.keymap_vertical = dict(DEFAULT_KEYMAP_VERTICAL)
         self.ui = dict(DEFAULT_UI)
         self.reload_if_changed(force=True)
 
@@ -95,6 +114,11 @@ class Config:
                 if action in keymap and isinstance(keys, list) and keys:
                     keymap[action] = _normalize_keys(keys)
             self.keymap = keymap
+            keymap_v = dict(DEFAULT_KEYMAP_VERTICAL)
+            for action, keys in data.get('keymap_vertical', {}).items():
+                if action in keymap_v and isinstance(keys, list) and keys:
+                    keymap_v[action] = _normalize_keys(keys)
+            self.keymap_vertical = keymap_v
             ui = dict(DEFAULT_UI)
             try:
                 per_row = int(data.get('candPerRow', DEFAULT_UI['candPerRow']))
@@ -129,9 +153,10 @@ class Config:
         """日文标点映射开关（, -> 、 . -> 。 等）。"""
         return self.ui.get('japanese_punct', DEFAULT_UI['japanese_punct'])
 
-    def match(self, key_event, action):
-        """key_event 是否命中 action 绑定的任意按键。"""
-        for key in self.keymap.get(action, []):
+    def match(self, key_event, action, vertical=False):
+        """key_event 是否命中 action 绑定的任意按键（vertical 用竖排键位表）。"""
+        keymap = self.keymap_vertical if vertical else self.keymap
+        for key in keymap.get(action, []):
             if len(key) == 1:  # 字符键：按 charCode 匹配
                 if key_event.charCode and chr(key_event.charCode) == key:
                     return True

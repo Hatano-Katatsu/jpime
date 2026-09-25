@@ -1,5 +1,6 @@
 ﻿# jpime settings GUI (WPF, modern style matching the candidate window).
 # Key capture: click a box and press the actual keys. Edits %APPDATA%\jpime\config.json
+# 键位分「横排」/「竖排」两个页签，分别写 config.json 的 keymap / keymap_vertical。
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
@@ -18,16 +19,29 @@ $actions = @(
     @('cursor_down',           '候选光标下移'),
     @('toggle_english',        '单击切换英文模式')
 )
+# 竖排多一个动作：Enter 确认选中候选（横排不用，空格已承担）
+$actionsV = $actions + (,@('confirm_selection', '确认选中候选'))
 
-$defaults = @{
+# 横排默认值（= config.py 的 DEFAULT_KEYMAP）
+$defaultsH = @{
     commit_kana = @('return'); cancel = @('escape')
     commit_full_katakana = @('tab'); commit_half_katakana = @('oem3')
-    page_up = @(',', '<', 'prior'); page_down = @('.', '>', 'next')
+    page_up = @(',', '<', 'prior', 'left'); page_down = @('.', '>', 'next', 'right')
     cursor_up = @('up'); cursor_down = @('down'); toggle_english = @('shift')
 }
+# 竖排默认值（= config.py 的 DEFAULT_KEYMAP_VERTICAL）
+$defaultsV = @{
+    commit_kana = @(); cancel = @('escape')
+    commit_full_katakana = @('tab'); commit_half_katakana = @('oem3')
+    page_up = @('left', 'prior'); page_down = @('right', 'next')
+    cursor_up = @('up'); cursor_down = @('down'); toggle_english = @('shift')
+    confirm_selection = @('return')
+}
 
-$current = @{}
-foreach ($a in $actions) { $current[$a[0]] = $defaults[$a[0]] }
+$currentH = @{}
+foreach ($a in $actions) { $currentH[$a[0]] = $defaultsH[$a[0]] }
+$currentV = @{}
+foreach ($a in $actionsV) { $currentV[$a[0]] = $defaultsV[$a[0]] }
 $script:perRow = 9   # 候选窗每排个数：9=横排，1=竖排
 $script:jpPunct = $true   # 日文标点映射（, -> 、  . -> 。  等）
 if (Test-Path $cfgPath) {
@@ -35,7 +49,11 @@ if (Test-Path $cfgPath) {
         $j = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($a in $actions) {
             $v = $j.keymap.($a[0])
-            if ($v) { $current[$a[0]] = @($v) }
+            if ($v) { $currentH[$a[0]] = @($v) }
+        }
+        foreach ($a in $actionsV) {
+            $v = $j.keymap_vertical.($a[0])
+            if ($v) { $currentV[$a[0]] = @($v) }
         }
         if ($j.candPerRow -ge 1) { $script:perRow = [int]$j.candPerRow }
         if ($null -ne $j.japanese_punct) { $script:jpPunct = [bool]$j.japanese_punct }
@@ -133,86 +151,109 @@ $tip.TextWrapping = 'Wrap'
 $stack.Children.Add($tip) | Out-Null
 
 # ---- capture rows ----
-$boxes = @{}
-foreach ($a in $actions) {
-    $row = New-Object Windows.Controls.Grid
-    $row.Margin = '20,4,20,4'
-    $col1 = New-Object Windows.Controls.ColumnDefinition; $col1.Width = '150'
-    $col2 = New-Object Windows.Controls.ColumnDefinition; $col2.Width = '*'
-    $row.ColumnDefinitions.Add($col1); $row.ColumnDefinitions.Add($col2)
+# 为一组动作生成按键录入行，返回面板；录入框登记到 $boxStore（action -> Border）
+function New-KeymapPanel($acts, $cur, $boxStore) {
+    $panel = New-Object Windows.Controls.StackPanel
+    foreach ($a in $acts) {
+        $row = New-Object Windows.Controls.Grid
+        $row.Margin = '20,4,20,4'
+        $col1 = New-Object Windows.Controls.ColumnDefinition; $col1.Width = '150'
+        $col2 = New-Object Windows.Controls.ColumnDefinition; $col2.Width = '*'
+        $row.ColumnDefinitions.Add($col1); $row.ColumnDefinitions.Add($col2)
 
-    $lbl = New-Object Windows.Controls.TextBlock
-    $lbl.Text = $a[1]
-    $lbl.Foreground = $brText
-    $lbl.VerticalAlignment = 'Center'
-    [Windows.Controls.Grid]::SetColumn($lbl, 0)
+        $lbl = New-Object Windows.Controls.TextBlock
+        $lbl.Text = $a[1]
+        $lbl.Foreground = $brText
+        $lbl.VerticalAlignment = 'Center'
+        [Windows.Controls.Grid]::SetColumn($lbl, 0)
 
-    $box = New-Object Windows.Controls.Border
-    $box.Height = 32
-    $box.Background = $brBg
-    $box.BorderBrush = $brBorder
-    $box.BorderThickness = '1'
-    $box.CornerRadius = '4'
-    $box.Cursor = 'Hand'
-    $box.Focusable = $true
-    $tb = New-Object Windows.Controls.TextBlock
-    $tb.Text = ($current[$a[0]] -join '  ')
-    $tb.FontFamily = $fontMono
-    $tb.Foreground = $brText
-    $tb.Margin = '10,0,10,0'
-    $tb.VerticalAlignment = 'Center'
-    $box.Child = $tb
-    $box.Tag = @{ tokens = @($current[$a[0]]); pending = $null }
-    [Windows.Controls.Grid]::SetColumn($box, 1)
+        $box = New-Object Windows.Controls.Border
+        $box.Height = 32
+        $box.Background = $brBg
+        $box.BorderBrush = $brBorder
+        $box.BorderThickness = '1'
+        $box.CornerRadius = '4'
+        $box.Cursor = 'Hand'
+        $box.Focusable = $true
+        $tb = New-Object Windows.Controls.TextBlock
+        $tb.Text = ($cur[$a[0]] -join '  ')
+        $tb.FontFamily = $fontMono
+        $tb.Foreground = $brText
+        $tb.Margin = '10,0,10,0'
+        $tb.VerticalAlignment = 'Center'
+        $box.Child = $tb
+        $box.Tag = @{ tokens = @($cur[$a[0]]); pending = $null }
+        [Windows.Controls.Grid]::SetColumn($box, 1)
 
-    $box.Add_GotFocus({ param($s, $e) $s.BorderBrush = $brFocus })
-    $box.Add_LostFocus({ param($s, $e) $s.BorderBrush = $brBorder; $s.Tag.pending = $null })
-    $box.Add_MouseLeftButtonDown({ param($s, $e) [Windows.Input.Keyboard]::Focus($s) | Out-Null })
+        $box.Add_GotFocus({ param($s, $e) $s.BorderBrush = $brFocus })
+        $box.Add_LostFocus({ param($s, $e) $s.BorderBrush = $brBorder; $s.Tag.pending = $null })
+        $box.Add_MouseLeftButtonDown({ param($s, $e) [Windows.Input.Keyboard]::Focus($s) | Out-Null })
 
-    $box.Add_PreviewKeyDown({
-        param($s, $e)
-        $code = $e.Key.ToString()
-        if ($code -eq 'Delete') {
-            $s.Tag.tokens = @(); $s.Child.Text = ''
-            $e.Handled = $true; return
-        }
-        $name = $vkMap[$code]
-        if ($name) {
-            $e.Handled = $true
-            if ($name -eq 'shift' -or $name -eq 'control') {
-                $s.Tag.pending = $name   # 修饰键：等 KeyUp 确认「单按」
-            } else {
-                $s.Tag.pending = $null
-                Append-Key $s $name
+        $box.Add_PreviewKeyDown({
+            param($s, $e)
+            $code = $e.Key.ToString()
+            if ($code -eq 'Delete') {
+                $s.Tag.tokens = @(); $s.Child.Text = ''
+                $e.Handled = $true; return
             }
-        }
-    })
+            $name = $vkMap[$code]
+            if ($name) {
+                $e.Handled = $true
+                if ($name -eq 'shift' -or $name -eq 'control') {
+                    $s.Tag.pending = $name   # 修饰键：等 KeyUp 确认「单按」
+                } else {
+                    $s.Tag.pending = $null
+                    Append-Key $s $name
+                }
+            }
+        })
 
-    $box.Add_PreviewTextInput({
-        param($s, $e)
-        $s.Tag.pending = $null
-        $ch = $e.Text
-        if ($ch -and -not [char]::IsControl($ch[0])) {
-            Append-Key $s $ch.ToLower()
-        }
-        $e.Handled = $true
-    })
-
-    $box.Add_KeyUp({
-        param($s, $e)
-        $code = $e.Key.ToString()
-        if (($code -eq 'LeftShift' -or $code -eq 'RightShift' -or
-             $code -eq 'LeftCtrl' -or $code -eq 'RightCtrl') -and $s.Tag.pending) {
-            Append-Key $s $s.Tag.pending
+        $box.Add_PreviewTextInput({
+            param($s, $e)
             $s.Tag.pending = $null
-        }
-    })
+            $ch = $e.Text
+            if ($ch -and -not [char]::IsControl($ch[0])) {
+                Append-Key $s $ch.ToLower()
+            }
+            $e.Handled = $true
+        })
 
-    $row.Children.Add($lbl) | Out-Null
-    $row.Children.Add($box) | Out-Null
-    $stack.Children.Add($row) | Out-Null
-    $boxes[$a[0]] = $box
+        $box.Add_KeyUp({
+            param($s, $e)
+            $code = $e.Key.ToString()
+            if (($code -eq 'LeftShift' -or $code -eq 'RightShift' -or
+                 $code -eq 'LeftCtrl' -or $code -eq 'RightCtrl') -and $s.Tag.pending) {
+                Append-Key $s $s.Tag.pending
+                $s.Tag.pending = $null
+            }
+        })
+
+        $row.Children.Add($lbl) | Out-Null
+        $row.Children.Add($box) | Out-Null
+        $panel.Children.Add($row) | Out-Null
+        $boxStore[$a[0]] = $box
+    }
+    return $panel
 }
+
+$boxesH = @{}
+$boxesV = @{}
+
+$tabs = New-Object Windows.Controls.TabControl
+$tabs.Margin = '0,6,0,0'
+$tabs.Background = [Windows.Media.Brushes]::Transparent
+
+$tabH = New-Object Windows.Controls.TabItem
+$tabH.Header = '横排'
+$tabH.Content = New-KeymapPanel $actions $currentH $boxesH
+$tabs.Items.Add($tabH) | Out-Null
+
+$tabV = New-Object Windows.Controls.TabItem
+$tabV.Header = '竖排'
+$tabV.Content = New-KeymapPanel $actionsV $currentV $boxesV
+$tabs.Items.Add($tabV) | Out-Null
+
+$stack.Children.Add($tabs) | Out-Null
 
 # ---- 候选窗排列：横排/竖排分段开关 ----
 $layoutRow = New-Object Windows.Controls.Grid
@@ -341,12 +382,17 @@ function New-StyledButton($text, $primary) {
 $btnSave = New-StyledButton '保存' $true
 $btnSave.Add_Click({
     $keymap = @{}
-    foreach ($k in $boxes.Keys) {
-        $keys = @($boxes[$k].Tag.tokens | Where-Object { $_ })
+    foreach ($k in $boxesH.Keys) {
+        $keys = @($boxesH[$k].Tag.tokens | Where-Object { $_ })
         if ($keys) { $keymap[$k] = @($keys | ForEach-Object { $_.ToLower() }) }
     }
+    $keymapV = @{}
+    foreach ($k in $boxesV.Keys) {
+        $keys = @($boxesV[$k].Tag.tokens | Where-Object { $_ })
+        if ($keys) { $keymapV[$k] = @($keys | ForEach-Object { $_.ToLower() }) }
+    }
     if (-not (Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
-    @{keymap = $keymap; candPerRow = $script:perRow; japanese_punct = [bool]$punctCb.IsChecked} | ConvertTo-Json -Depth 4 | Set-Content $cfgPath -Encoding UTF8
+    @{keymap = $keymap; keymap_vertical = $keymapV; candPerRow = $script:perRow; japanese_punct = [bool]$punctCb.IsChecked} | ConvertTo-Json -Depth 4 | Set-Content $cfgPath -Encoding UTF8
     $btnSave.Content = '✓ 已保存'
     $btnSave.IsEnabled = $false
     $timer = New-Object Windows.Threading.DispatcherTimer
@@ -362,9 +408,13 @@ $btnSave.Add_Click({
 
 $btnReset = New-StyledButton '恢复默认' $false
 $btnReset.Add_Click({
-    foreach ($k in $boxes.Keys) {
-        $boxes[$k].Tag.tokens = @($defaults[$k])
-        $boxes[$k].Child.Text = ($defaults[$k] -join '  ')
+    foreach ($k in $boxesH.Keys) {
+        $boxesH[$k].Tag.tokens = @($defaultsH[$k])
+        $boxesH[$k].Child.Text = ($defaultsH[$k] -join '  ')
+    }
+    foreach ($k in $boxesV.Keys) {
+        $boxesV[$k].Tag.tokens = @($defaultsV[$k])
+        $boxesV[$k].Child.Text = ($defaultsV[$k] -join '  ')
     }
     $script:perRow = 9
     & $script:updateSeg
