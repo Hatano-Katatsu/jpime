@@ -62,10 +62,15 @@ foreach ($d in @("$pimeDir\python\input_methods\jpime", "$pimeDir\jpime-runtime"
 }
 $self = Join-Path $pimeDir 'jpime-uninstall.ps1'
 
-# 6. remove uninstall registry entry
+# 6. remove autostart entries (Run key + startup folder shortcut)
+Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'jpime-tray' -Force -ErrorAction SilentlyContinue
+$lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\jpime-tray.lnk'
+if (Test-Path $lnk) { Remove-Item $lnk -Force }
+
+# 7. remove uninstall registry entry
 Remove-Item 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\jpime' -Recurse -Force -ErrorAction SilentlyContinue
 
-# 7. ask about user data (learned words, config)
+# 8. ask about user data (learned words, config)
 Add-Type -AssemblyName PresentationFramework
 $ans = [System.Windows.MessageBox]::Show('是否同时删除用户数据（选词学习记录、快捷键配置）？', '日文输入法卸载', 'YesNo', 'Question')
 if ($ans -eq 'Yes') {
@@ -73,7 +78,7 @@ if ($ans -eq 'Yes') {
     Log 'user data removed'
 }
 
-# 8. restart launcher (PIME 本体保留，可单独卸载)
+# 9. restart launcher (PIME 本体保留，可单独卸载)
 if (Test-Path $launcher) { Start-Process $launcher }
 Remove-Item $self -Force -ErrorAction SilentlyContinue
 [System.Windows.MessageBox]::Show('卸载完成。如不再需要 PIME 框架本身，可在系统设置的应用列表里卸载 PIME。', '日文输入法卸载') | Out-Null
