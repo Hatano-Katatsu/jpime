@@ -1,4 +1,4 @@
-﻿# jpime 安装脚本（仓库分发版）。最终用户用：右键 -> 使用 PowerShell 运行，批准一次 UAC。
+# jpime 安装脚本（仓库分发版）。最终用户用：右键 -> 使用 PowerShell 运行，批准一次 UAC。
 # 大件（PIME 本体 / 便携 Python / MeCab / mozcpy 词典）联网下载；本脚本可重复运行，已装组件自动跳过。
 # 本文件必须保存为 UTF-8 with BOM（PS5.1 无 BOM 会把中文读乱）。
 $ErrorActionPreference = 'Stop'
@@ -89,6 +89,23 @@ try {
     & $launcher /quit 2>$null | Out-Null
     Start-Sleep -Seconds 2
     Get-Process jpime-tray -ErrorAction SilentlyContinue | Stop-Process -Force
+
+    # 2.5 剥掉 PIME 官方安装包捆绑的新酷音(chewing)——日文输入法用不到，
+    #     不删的话用户语言栏会多出"新酷音輸入法"。只删 chewing 自己的
+    #     profile GUID 和模块文件夹，共享 CLSID 与 jpime 的注册项不动。
+    $chewGuid = '{F80736AA-28DB-423A-92C9-5540F501C939}'
+    $tipClsid = '{35F67E9D-A54D-4177-9697-8B0AB71A9E04}'
+    foreach ($tipRoot in "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$tipClsid",
+                         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\CTF\TIP\$tipClsid") {
+        Get-ChildItem $tipRoot -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -eq $chewGuid } |
+            ForEach-Object { Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    $chewDir = Join-Path $pimeDir 'python\input_methods\chewing'
+    if (Test-Path $chewDir) {
+        Remove-Item $chewDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $chewDir) { Log '警告: 新酷音模块未能删除干净' } else { Log '已移除 PIME 捆绑的新酷音模块' }
 
     # 3. 复制模块文件
     New-Item -ItemType Directory -Force -Path $modDir | Out-Null
